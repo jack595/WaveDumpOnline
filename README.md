@@ -16,7 +16,7 @@ In time profile measurement, to monitor the charge distribution and occupancy of
 * `--threshold-ADC` is the threshold of maximum of waveform
 * `--threshold-peak-valley-ratio` is the threshold of peak-valley ratio:
 
-$ max+min \over max $ 
+$$ max+min \over max $$
 
 * `--threshold-charge` is the threshold of the sum of the waveform.
 So blank event definition: (max < threshold_ADC) or ( (max+min)/min < threshold_peak_valley_ratio) or (sum < threshold_charge)
