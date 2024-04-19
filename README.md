@@ -32,4 +32,5 @@ $$ \sigma=\sqrt{ (1-exp{(-\mu)}) \over (n_{Total}*exp{(-\mu)}) } $$
 
 ## GUI Interface
 The Interface is shown as below:
+
 ![](./figure/GUI_Interface.png)
