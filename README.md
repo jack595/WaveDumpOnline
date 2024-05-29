@@ -6,7 +6,7 @@ In time profile measurement, to monitor the charge distribution and occupancy of
 ## Usage 
 0. Clone this repository:`git clone https://github.com/jack595/WaveDumpOnline.git`
 1. Clone reader for Wavedump under WaveDumpOnline directory : `cd WaveDumpOnline && git clone https://github.com/robjfoster/gimmedatwave.git` 
-2. Run the monitor: `python WavedumpChargeOnlineMonitor.py --input-directory /mnt/f/Data_dEdxExperiment/Data_N6742/405nmLaser_test_pulse_width/ --digitizer X742`
+2. Run the monitor: `python WavedumpOnlineMonitor.py --input-directory /mnt/f/Data_dEdxExperiment/Data_N6742/405nmLaser_test_pulse_width/ --digitizer X742`
 
 ## Parameters
 * `--input-directory` is the directory where the data is being written to by the digitizer, monitor will look for *.dat in this directory
