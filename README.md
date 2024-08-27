@@ -5,8 +5,15 @@ In time profile measurement, to monitor the charge distribution and occupancy of
 Also, position detector online monitor is implemented to monitor the position detector data in real time.
 
 ## Environment Settings
+### Terminal
 It is fine whether Powershell or Linux terminal to run the monitor.The only required package is `numpy`, `matplotlib` and `pandas` for the monitor.
 Therefore, it is recommended to install the package by `pip install numpy matplotlib pandas` for the first run.
+
+### WaveDump Settings (WaveDumpConfig.txt)
+It is needed to mention that the data saved in Wavedump should be binary format rather than ASCII format, i.e. `OUTPUT_FILE_FORMAT  BINARY` . The binary format is more efficient and faster to read the data. In addition, 
+event header should be turned on, corresponding to command line `OUTPUT_FILE_HEADER  YES` in WavedumpConfig.txt. 
+
+Otherwise, the online monitor will not be able to read the data correctly and cause some errors.
 
 ## Usage 
 0. Clone this repository:`git clone https://github.com/jack595/WaveDumpOnline.git`
@@ -38,6 +45,7 @@ So blank event definition: (max < threshold_ADC) or ( (max+min)/min < threshold_
 $$ \mu=-log{n_{Blank} \over n_{Total} }$$
 
 $$ \sigma=\sqrt{ (1-exp{(-\mu)}) \over (n_{Total}*exp{(-\mu)}) } $$
+
 
 ## GUI Interface
 The Interface is shown as below:
