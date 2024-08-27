@@ -48,6 +48,10 @@ $$ \sigma=\sqrt{ (1-exp{(-\mu)}) \over (n_{Total}*exp{(-\mu)}) } $$
 
 
 ## GUI Interface
-The Interface is shown as below:
+The interface of charge spectrum monitor is shown as below:
 
 ![](./figure/GUI_Interface.png)
+
+The interface of position detector monitor is shown as below:
+
+![position_monitor.png](figure%2Fposition_monitor.png)
