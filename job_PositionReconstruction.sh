@@ -1,0 +1,2 @@
+#python WavedumpOnlineMonitor_PositionDetector.py --input-directory /mnt/e/Data/LayHorizontal_WithoutSource_UpdateElecBoard_7/ --digitizer X742 --separation-rule-file ./PostionReconstruction/StripSeparationRule.npz
+python WavedumpOnlineMonitor_PositionDetector.py --input-directory '/mnt/e/Data/LayVertical_WithSource(0,0)_UpdateElecBoard_7/' --digitizer X742 --separation-rule-file ./PostionReconstruction/StripSeparationRule.npz
