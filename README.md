@@ -2,6 +2,11 @@
 Method learned from robjfoster's git@github.com:robjfoster/wavedumplivepsd.git and using WaveDump reader in robjfoster's repository
 
 In time profile measurement, to monitor the charge distribution and occupancy of the waveform data from the digitizer in real time.
+Also, position detector online monitor is implemented to monitor the position detector data in real time.
+
+## Environment Settings
+It is fine whether Powershell or Linux terminal to run the monitor.The only required package is `numpy`, `matplotlib` and `pandas` for the monitor.
+Therefore, it is recommended to install the package by `pip install numpy matplotlib pandas` for the first run.
 
 ## Usage 
 0. Clone this repository:`git clone https://github.com/jack595/WaveDumpOnline.git`
