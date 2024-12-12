@@ -16,6 +16,7 @@ import time
 from matplotlib.animation import FuncAnimation
 from glob import glob
 import pandas as pd
+from sympy.printing.pretty.pretty_symbology import line_width
 
 module_path = os.path.abspath(os.path.join('..'))
 if module_path not in sys.path:
@@ -24,12 +25,13 @@ if module_path not in sys.path:
 from gimmedatwave.gimmedatwave import gimmedatwave as gdw  # nopep8
 
 # Set Global Variables
-global bins_charge
+global bins_charge,bins_charge_ratio
 global bin_centers
-global dict_bin_counts
+global dict_bin_counts, dict_bin_counts_charge_ratio
 global error_counts
 global dict_parser
 global time_tolerant_no_event # seconds
+
 
 n_to_drop_in_waveform = None
 n_total_triggers = 0
@@ -38,18 +40,24 @@ text_objects ={}
 
 dict_parser = {}
 dict_bin_counts = {}
+dict_bin_counts_charge_ratio = {}
 dict_hist_patches = {}
 dict_n_blank_waveform = {}
 
 error_count = 0
 
+def GetBinCenter(bins):
+    return 0.5 * (bins[:-1] + bins[1:])
+
 def reset(event):
     print("Reset The Dataset.....")
-    global dict_bin_counts, dict_n_blank_waveform,n_total_triggers, h2d_position, bins_position
+    global dict_bin_counts,dict_bin_counts_charge_ratio, dict_n_blank_waveform,n_total_triggers, h2d_position, bins_position
     n_total_triggers = 0
     for channel in dict_bin_counts.keys():
         dict_bin_counts[channel] = 0
         dict_n_blank_waveform[channel] = 0
+    for channel in dict_bin_counts_charge_ratio.keys():
+        dict_bin_counts_charge_ratio[channel] = 0
     h2d_position = np.zeros((len(bins_position)-1, len(bins_position)-1))
 
 
@@ -63,8 +71,9 @@ def parse_args():
     ################ Charge Spectrum Setting ################
     # Binning Strategy for Charge Spectrum
     parser.add_argument('--bin-start', type=float, default=-1000,help="Start of the charge binning")
-    parser.add_argument('--bin-end', type=float, default=10000,help="End of the charge binning")
-    parser.add_argument('--nbins', type=int, default=400,help="Number of bins for the charge histogram")
+    parser.add_argument('--bin-end', type=float, default=30000,help="End of the charge binning")
+    parser.add_argument('--nbins', type=int, default=100,help="Number of bins for the charge histogram")
+    parser.add_argument('--nbins-charge-ratio', type=int, default=200,help="Number of bins for the charge ratio histogram")
     # Set Baseline Range
     parser.add_argument('--n-baseline', type=int, default=50,help="Number of beginning waveform to get baseline")
     # Integral Window Range
@@ -76,7 +85,8 @@ def parse_args():
     ########################################################
 
     ################ Position Reconstruction Setting ################
-    parser.add_argument('--charge-threshold-XY-layer', type=float, default=0.,help="Charge Threshold for X and Y Layer")
+    parser.add_argument('--charge-threshold-XY-layer', type=float, default=2000.,help="Charge Threshold for X and Y Layer")
+    parser.add_argument('--charge-ratio-threshold-XY', type=float, default=2000.,help="Charge Threshold for X and Y Layer")
     parser.add_argument('--separation-rule-file', type=str, default="separation_rule.npz") # Can be attained from\
     #C:\Users\WenLJ\PycharmProjects\sk_DSNB\junofs_500G\LSPositionDetectorTest\code\UnstandChannelDecodingWithProcessData.ipynb
 
@@ -98,12 +108,12 @@ def LoadSeparationRule(file):
 
 # Position Reconstruction Tools (Copied from \
 # C:\Users\WenLJ\PycharmProjects\sk_DSNB\junofs_500G\LSPositionDetectorTest\code\PositionReconstructionTools.py)
-def SetLayerVariables(df_wave_filter:pd.DataFrame, dict_channel_pair=None):
+def SetLayerVariables(df_wave_filter, dict_channel_pair=None):
     if dict_channel_pair is None:
         dict_channel_pair = {"X1":(0, 1), "X2":(2,3),"Y1":(4,5), "Y2":(6,7)}
     for key, value in dict_channel_pair.items():
         df_wave_filter["Q_Ratio_"+key] = (df_wave_filter[f"Q_ch{value[1]}"])/(df_wave_filter[f"Q_ch{value[1]}"]+df_wave_filter[f"Q_ch{value[0]}"])
-        df_wave_filter["Q_Subtraction_Ratio_"+key] = (df_wave_filter[f"Q_ch{value[0]}"]-df_wave_filter[f"Q_ch{value[1]}"])/(df_wave_filter[f"Q_ch{value[1]}"]+df_wave_filter[f"Q_ch{value[0]}"])
+        # df_wave_filter["Q_Subtraction_Ratio_"+key] = (df_wave_filter[f"Q_ch{value[0]}"]-df_wave_filter[f"Q_ch{value[1]}"])/(df_wave_filter[f"Q_ch{value[1]}"]+df_wave_filter[f"Q_ch{value[0]}"])
         df_wave_filter["Q_sum_layer_"+key] = (df_wave_filter[f"Q_ch{value[1]}"]+df_wave_filter[f"Q_ch{value[0]}"])
 
 def PositionRecForDf(df_wave_filter,dict_bins, dx_strip = 14.5, full_Q=False,
@@ -144,16 +154,18 @@ def update_plot(frame, dict_parser:dict, args, dict_hist_patches, axes, im_posit
     global error_count,time_tolerant_no_event, n_total_triggers
     # Charge calculation setting
     global polarity, n_baseline, integral_start, integral_end,bins_charge, n_to_drop_in_waveform
+    global dict_bin_counts, dict_bin_counts_charge_ratio
     # Position Reconstruction Setting
     global bins_position,h2d_position, dict_channel_pair, dict_bins,charge_threshold_for_XY_layer
 
-    dict_v_charge_sum = {}
+    dict_Q = {}
     for channel in dict_parser.keys():
-        dict_v_charge_sum[f"Q_ch{channel}"] = []
+        dict_Q[f"Q_ch{channel}"] = np.array([])
 
     start_time = time.time()
     while time.time() - start_time < 5: # Calculate for each second
         try:
+            # t_start_reading = time.time()
             # hacky way to reset the parser's event count
             for i, channel in enumerate(dict_parser.keys()):
                 dict_parser[channel].n_entries = dict_parser[channel]._get_entries()
@@ -162,21 +174,46 @@ def update_plot(frame, dict_parser:dict, args, dict_hist_patches, axes, im_posit
                 event.record = event.record - np.mean(event.record[:n_baseline]) # Subtract Baseline
                 waveform = event.record[:n_to_drop_in_waveform]
                 charge = np.sum(waveform[integral_start:integral_end])
-                dict_v_charge_sum[f'Q_ch{channel}'].append(charge)
+                dict_Q[f'Q_ch{channel}'] = np.append(dict_Q[f'Q_ch{channel}'], charge)
                 error_count = 0
+            # t_end_reading = time.time()
+
+            for key in dict_Q.keys():
+                dict_Q[key] = np.array(dict_Q[key])
             n_total_triggers += 1
-            df_data = pd.DataFrame.from_dict(dict_v_charge_sum)
-            SetLayerVariables(df_data, dict_channel_pair)
-            index_charge_threshold_for_XY_layer = ((df_data["Q_sum_layer_X1"]+df_data["Q_sum_layer_X2"]>charge_threshold_for_XY_layer) &
-                                                   (df_data["Q_sum_layer_Y1"]+df_data["Q_sum_layer_Y2"]>charge_threshold_for_XY_layer))
-            df_data = df_data[index_charge_threshold_for_XY_layer]
-            PositionRecForDf(df_data, dict_bins, dx_strip=14.5, full_Q=False,
+            t_finish_convert_df = time.time()
+            SetLayerVariables(dict_Q, dict_channel_pair)
+
+            # t_set_variables = time.time()
+
+            # Charge Spectrum
+            for name_layer in dict_bin_counts.keys():
+                if name_layer =="X+Y":
+                    dict_bin_counts[name_layer] += np.histogram(dict_Q[f'Q_sum_layer_X1']+dict_Q[f'Q_sum_layer_X2']+\
+                                                                dict_Q[f'Q_sum_layer_Y1']+dict_Q[f'Q_sum_layer_Y2'], bins=bins_charge)[0]
+                else:
+                    dict_bin_counts[name_layer] += np.histogram(dict_Q[f'Q_sum_layer_{name_layer}1']+dict_Q[f'Q_sum_layer_{name_layer}2'], bins=bins_charge)[0]
+
+            # Charge Ratio
+            for name_layer in dict_bin_counts_charge_ratio.keys():
+                dict_bin_counts_charge_ratio[name_layer] += np.histogram(dict_Q[f'Q_Ratio_{name_layer}'][dict_Q[f"Q_sum_layer_{name_layer}"]>args.charge_ratio_threshold_XY],
+                                                                         bins=bins_charge_ratio)[0]
+
+            # Position Reconstruction
+            PositionRecForDf(dict_Q, dict_bins, dx_strip=14.5, full_Q=False,
                                        key_prefix_charge="Q_sum_layer_", suffix_output="")
 
-            h2d_position_tmp,_, _ =  np.histogram2d(df_data["Position_X"],
-                                               df_data["Position_Y"],
+            index_charge_threshold_for_XY_layer = ((dict_Q["Q_sum_layer_X1"]+dict_Q["Q_sum_layer_X2"]>charge_threshold_for_XY_layer) &
+                                                   (dict_Q["Q_sum_layer_Y1"]+dict_Q["Q_sum_layer_Y2"]>charge_threshold_for_XY_layer))
+            for key in dict_Q.keys():
+                dict_Q[key] = dict_Q[key][index_charge_threshold_for_XY_layer]
+            # t_end_get_variables = time.time()
+
+            h2d_position_tmp,_, _ =  np.histogram2d(dict_Q["Position_X"],
+                                               dict_Q["Position_Y"],
                                                 bins=bins_position)
             h2d_position += h2d_position_tmp
+            # print(f"Reading Time:\t{t_end_reading-t_start_reading:.2g}\tConvert DF Time:\t{t_finish_convert_df-t_end_reading:.2g}\tSet Variables Time:\t{t_set_variables-t_finish_convert_df:.2g}\tGet Variables Time:\t{t_end_get_variables-t_set_variables:.2g}")
 
         except IndexError:
             error_count += 1
@@ -186,7 +223,6 @@ def update_plot(frame, dict_parser:dict, args, dict_hist_patches, axes, im_posit
                 sys.exit()
             time.sleep(1)
 
-    global dict_bin_counts
 
     print("======> Setting datapoints")
 
@@ -194,13 +230,16 @@ def update_plot(frame, dict_parser:dict, args, dict_hist_patches, axes, im_posit
     im_position.set_data(h2d_position.T)
     im_position.set_clim(0, h2d_position.max()*1.1)
 
-    for channel in dict_hist_patches.keys():
-        h = np.histogram(dict_v_charge_sum[f'Q_ch{channel}'], bins=bins_charge)
-        dict_bin_counts[channel] += h[0]
-        dict_hist_patches[channel].set_ydata(dict_bin_counts[channel])
+    for name_layer in dict_hist_patches.keys():
+        if name_layer[-1]=="1" or name_layer[-1]=="2":
+            dict_hist_patches[name_layer].set_ydata(dict_bin_counts_charge_ratio[name_layer])
+        else:
+            dict_hist_patches[name_layer].set_ydata(dict_bin_counts[name_layer])
 
     axes[0].set_ylim(0, np.max(np.concatenate(list(dict_bin_counts.values())))*1.1)
     axes[1].set_title(f"N of Triggers:{n_total_triggers:.0f}")
+    for ax in axes[2]:
+        ax.set_ylim(0, np.max(np.concatenate(list(dict_bin_counts_charge_ratio.values())))*1.1)
 
     return list(dict_hist_patches.values()) + [im_position]
 
@@ -208,7 +247,7 @@ def update_plot(frame, dict_parser:dict, args, dict_hist_patches, axes, im_posit
 def main():
     ################# Initialize Global Variables #################
     # Charge calculation setting
-    global polarity, n_baseline, integral_start, integral_end,bins_charge, n_to_drop_in_waveform
+    global polarity, n_baseline, integral_start, integral_end,bins_charge,bins_charge_ratio, n_to_drop_in_waveform
     # System settings
     global error_count,time_tolerant_no_event, n_total_triggers
     # Position Reconstruction Setting
@@ -248,27 +287,69 @@ def main():
         channel = file[-5]
         # Set Reader of Each Channels
         dict_parser[channel] = gdw.Parser(file, gdw.DigitizerFamily[args.digitizer])
+
+    # Charge Spectrum Setting
+    v_keys_charge_spectrum = ["X", "Y", "X+Y"]
+    for key in v_keys_charge_spectrum:
         # Initialize Charge Histogram Counts
-        dict_bin_counts[channel] = np.zeros(args.nbins-1)
+        dict_bin_counts[key] = np.zeros(args.nbins-1)
+
+    # Charge Ratio Setting
+    v_keys_charge_ratio = ["X1", "X2", "Y1", "Y2"]
+    for key in v_keys_charge_ratio:
+        dict_bin_counts_charge_ratio[key] = np.zeros(args.nbins_charge_ratio-1)
 
     bins_position = np.arange(-10, 180, 1)
     h2d_position = np.zeros((len(bins_position)-1, len(bins_position)-1))
 
     # binning Strategy
     bins_charge = np.linspace(args.bin_start, args.bin_end, args.nbins)
-    bin_centers = 0.5 * (bins_charge[:-1] + bins_charge[1:])
+    bin_centers = GetBinCenter(bins_charge)
+    bins_charge_ratio = np.linspace(0, 1, args.nbins_charge_ratio)
+    bin_centers_charge_ratio = GetBinCenter(bins_charge_ratio)
 
     # Create initial plot
-    fig, axes = plt.subplots(1, 2)
+    # fig, axes = plt.subplots(1, 3)
+    fig = plt.figure(figsize=(15, 5))
+
+    # 左边两张大图
+    gs = fig.add_gridspec(1, 3, width_ratios=[1, 1, 1])  # 定义三列的网格
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax2 = fig.add_subplot(gs[0, 1])
+
+    # 右边拆成四张竖直对齐的子图
+    gs_right = gs[0, 2].subgridspec(4, 1)  # 在右边第三列再分为四行
+    ax3_1 = fig.add_subplot(gs_right[0, 0])
+    ax3_2 = fig.add_subplot(gs_right[1, 0])
+    ax3_3 = fig.add_subplot(gs_right[2, 0])
+    ax3_4 = fig.add_subplot(gs_right[3, 0])
+
+    axes = [ax1,ax2, [ax3_1, ax3_2, ax3_3, ax3_4]]
 
     # Initial histogram setup
     ## For position plot
     im_position = axes[1].imshow(h2d_position.T, origin='lower', aspect='auto', extent=[bins_position[0], bins_position[-1],
                                                                   bins_position[0], bins_position[-1]])
+    position_center = 80
+    axes[1].axhline(position_center, color='r', linestyle='--',linewidth=1, alpha=0.5)
+    axes[1].axvline(position_center, color='r', linestyle='--',linewidth=1, alpha=0.5)
+
     ## For charge spectrum
-    for channel in dict_bin_counts.keys():
-        (hist_patches, ) = axes[0].step(bin_centers, dict_bin_counts[channel], where='mid', label=f"ch{channel}")
-        dict_hist_patches[channel] = hist_patches
+    axes[0].axvline(charge_threshold_for_XY_layer, color='r', linestyle='--', label="Charge Threshold\nfor XY Layer")
+    dict_colors = {'X':"b", "Y":"g", "X+Y":"k"}
+    for name_layer in dict_bin_counts.keys():
+        (hist_patches, ) = axes[0].step(bin_centers, dict_bin_counts[name_layer], where='mid', label=f"{name_layer}",
+                                        color=dict_colors[name_layer])
+        dict_hist_patches[name_layer] = hist_patches
+
+    # For Charge Ratio
+    for i,key in enumerate(dict_bin_counts_charge_ratio.keys()):
+        (hist_patches_charge_ratio, ) = axes[2][i].step(bin_centers_charge_ratio, dict_bin_counts_charge_ratio[key],
+                                                        where='mid', label=f"{key}",color="r")
+        dict_hist_patches[key] = hist_patches_charge_ratio
+        axes[2][i].set_title(key)
+        for value in dict_bins[key]:
+            axes[2][i].axvline(value, color='r', linestyle='--', alpha=0.5,linewidth=0.5)
 
     # Place the button on the plot
     from matplotlib.widgets import Button
@@ -288,11 +369,16 @@ def main():
     axes[1].set_title("Position Monitor")
     plt.colorbar(im_position, ax=axes[1])
 
+    axes[2][0].xaxis.set_visible(False)
+    axes[2][1].xaxis.set_visible(False)
+    axes[2][2].xaxis.set_visible(False)
+    axes[2][-1].set_xlabel("$\\frac{Q2}{Q1+Q2}$")
+
     animation = FuncAnimation(
         fig, update_plot, fargs=(dict_parser, args, dict_hist_patches, axes,
                                  im_position), frames=100)
 
-
+    # fig.tight_layout()
     plt.show()
 
 if __name__ == "__main__":

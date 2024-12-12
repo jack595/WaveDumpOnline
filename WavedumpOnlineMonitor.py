@@ -120,7 +120,7 @@ def update_plot(frame, dict_parser:dict, args, dict_hist_patches, ax):
             for i, channel in enumerate(dict_parser.keys()):
                 dict_parser[channel].n_entries = dict_parser[channel]._get_entries()
                 event = dict_parser[channel].read_next()
-                event.record = event.record*-1
+                event.record = np.array(event.record)*-1
                 event.record = event.record - np.mean(event.record[:100]) # Subtract Baseline
                 waveform = event.record[:n_to_drop_in_waveform]
                 charge = np.sum(waveform)
